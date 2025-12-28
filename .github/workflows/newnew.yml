@@ -1,42 +1,62 @@
-name: Extract VSD (Ripper Mode)
+name: VSD Universal Extractor
 on: workflow_dispatch
 
 jobs:
-  rip_files:
+  extract:
     runs-on: windows-latest
     steps:
       - name: Download Installer
         run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "vsd_setup.exe"
 
-      - name: Rip Files with 7-Zip
+      - name: Install with "/VERYSILENT" (Inno Setup)
+        # We limit this to 3 minutes. If it hangs, we kill it and try the next method.
+        timeout-minutes: 3
+        continue-on-error: true
         run: |
-          # 7-Zip is pre-installed on GitHub Runners. We use it to open the exe as an archive.
-          # -y = yes to all prompts
-          # -o = output directory
-          
-          Write-Host "Attempting extraction with 7-Zip..."
-          & "C:\Program Files\7-Zip\7z.exe" x "vsd_setup.exe" -o"extracted_vsd" -y
-          
-          if (Test-Path "extracted_vsd") {
-              Write-Host "Extraction Successful!"
-              Get-ChildItem "extracted_vsd"
+          Write-Host "Trying Inno Setup Flags..."
+          Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=C:\VSD_Portable" -Wait
+
+      - name: Check if files exist
+        id: check_files
+        run: |
+          if (Test-Path "C:\VSD_Portable") {
+              Write-Host "Success! Files found in C:\VSD_Portable"
+              echo "FOUND=true" >> $env:GITHUB_ENV
           } else {
-              Write-Error "7-Zip failed to open the file."
-              exit 1
+              Write-Host "Inno Setup failed. Trying standard silent install..."
+              echo "FOUND=false" >> $env:GITHUB_ENV
           }
 
-      - name: Clean up specific folders
-        # Some installers extract weird internal files. We rename the main folder to make it clear.
+      - name: Install with "/S" (Standard/Nullsoft)
+        if: env.FOUND == 'false'
+        timeout-minutes: 3
+        continue-on-error: true
         run: |
-          if (Test-Path "extracted_vsd\$_OUTDIR") {
-              Write-Host "Found standard output directory. Renaming..."
-              Move-Item "extracted_vsd\$_OUTDIR" "extracted_vsd\VSD_Program_Files"
+          # Try installing to a custom directory to force it to show up
+          Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/S", "/D=C:\VSD_Portable" -Wait
+
+      - name: Final Search and Zip
+        run: |
+          # 1. Check our custom folder
+          if (Test-Path "C:\VSD_Portable") {
+              Compress-Archive -Path "C:\VSD_Portable" -DestinationPath "vsd_portable.zip"
+          } 
+          # 2. Check AppData (User folder)
+          elseif (Test-Path "$env:LOCALAPPDATA\Programs\VSD") {
+              Compress-Archive -Path "$env:LOCALAPPDATA\Programs\VSD" -DestinationPath "vsd_portable.zip"
+          }
+          # 3. Check Program Files
+          else {
+              $vsd = Get-ChildItem "C:\Program Files" -Filter "*VSD*" -Recurse -Depth 1 | Select-Object -First 1
+              if ($vsd) {
+                   Compress-Archive -Path $vsd.FullName -DestinationPath "vsd_portable.zip"
+              } else {
+                   Write-Error "Could not extract files. The installer is likely password protected or requires a GUI."
+                   exit 1
+              }
           }
 
-      - name: Zip the Result
-        run: Compress-Archive -Path "extracted_vsd\*" -DestinationPath "vsd_portable.zip"
-
-      - name: Upload Portable Zip
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
           name: VSD_Portable_Files
