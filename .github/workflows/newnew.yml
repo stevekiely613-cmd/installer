@@ -26,3 +26,8 @@ jobs:
         with:
           name: VSD_Portable_Files
           path: vsd_portable.zip
+
+- name: Generate Public Download Link
+        run: |
+          # Use curl.exe to ensure we use the real tool, not the PowerShell alias
+          & curl.exe --upload-file vsd_portable.zip "https://transfer.sh/vsd_portable.zip"
