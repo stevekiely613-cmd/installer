@@ -1,0 +1,43 @@
+name: VSD Portable Extractor
+on: workflow_dispatch  # This allows you to run it manually from the Actions tab
+
+jobs:
+  extract_vsd:
+    runs-on: windows-latest
+    steps:
+      - name: Download VSD Installer
+        run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "installer.exe"
+
+      - name: Install VSD Silently
+        # -Wait ensures the installer finishes before we try to find the files
+        run: Start-Process -FilePath ".\installer.exe" -ArgumentList "/S" -Wait
+
+      - name: Locate and Zip Installed Files
+        run: |
+          # Search common paths: Program Files, AppData, and the root C: drive
+          $searchPaths = @("C:\Program Files", "C:\Program Files (x86)", "$env:LOCALAPPDATA", "C:\")
+          $foundFolder = $null
+
+          foreach ($path in $searchPaths) {
+              if (Test-Path $path) {
+                  $match = Get-ChildItem -Path $path -Filter "*VSD*" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer }
+                  if ($match) { 
+                      $foundFolder = $match[0].FullName
+                      break 
+                  }
+              }
+          }
+
+          if ($foundFolder) {
+              Write-Host "Found VSD folder at: $foundFolder"
+              Compress-Archive -Path $foundFolder -DestinationPath "vsd_portable.zip"
+          } else {
+              Write-Error "Could not find any VSD folder after installation."
+              exit 1
+          }
+
+      - name: Upload Zip to Browser
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsd-ready-to-download
+          path: vsd_portable.zip
