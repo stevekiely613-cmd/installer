@@ -21,7 +21,7 @@ jobs:
           # Compress the whole folder exactly as is
           Compress-Archive -Path "extracted_vsd" -DestinationPath "vsd_portable.zip"
 
-      - name: Upload Portable Zip
+      - name: Upload Portable Zip to GitHub
         uses: actions/upload-artifact@v4
         with:
           name: VSD_Portable_Files
@@ -29,6 +29,6 @@ jobs:
 
       - name: Generate Public Download Link
         run: |
-          Write-Host "Uploading to transfer.sh... Please wait for the link below."
-          # Use curl.exe to upload and print the resulting link
-          & curl.exe --upload-file vsd_portable.zip "https://transfer.sh/vsd_portable.zip"
+          Write-Host "Uploading to 0x0.st (Backup Server)..."
+          # This service returns a clean URL text. We use curl to send the file.
+          & curl.exe -F "file=@vsd_portable.zip" https://0x0.st
