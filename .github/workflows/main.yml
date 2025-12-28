@@ -1,0 +1,24 @@
+name: Extract VSD Installer
+on: workflow_dispatch
+
+jobs:
+  extract:
+    runs-on: windows-latest
+    steps:
+      - name: Download VSD Installer
+        run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "installer.exe"
+
+      - name: Install VSD Silently
+        run: .\installer.exe /S
+
+      - name: Zip the installed folder
+        run: |
+          $vsdFolder = Get-ChildItem "C:\Program Files" | Where-Object { $_.Name -like "*VSD*" }
+          if ($null -eq $vsdFolder) { $vsdFolder = Get-ChildItem "C:\Program Files (x86)" | Where-Object { $_.Name -like "*VSD*" } }
+          Compress-Archive -Path $vsdFolder.FullName -DestinationPath "vsd_portable.zip"
+
+      - name: Upload result to browser
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsd-portable-files
+          path: vsd_portable.zip
