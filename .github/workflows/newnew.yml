@@ -1,62 +1,27 @@
-name: VSD Universal Extractor
+name: Extract VSD (Final)
 on: workflow_dispatch
 
 jobs:
-  extract:
+  rip_files:
     runs-on: windows-latest
     steps:
       - name: Download Installer
         run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "vsd_setup.exe"
 
-      - name: Install with "/VERYSILENT" (Inno Setup)
-        # We limit this to 3 minutes. If it hangs, we kill it and try the next method.
-        timeout-minutes: 3
-        continue-on-error: true
+      - name: Rip Files with 7-Zip
         run: |
-          Write-Host "Trying Inno Setup Flags..."
-          Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=C:\VSD_Portable" -Wait
+          Write-Host "Extracting with 7-Zip..."
+          & "C:\Program Files\7-Zip\7z.exe" x "vsd_setup.exe" -o"extracted_vsd" -y
+          
+          # List files just to prove they are there
+          Get-ChildItem "extracted_vsd"
 
-      - name: Check if files exist
-        id: check_files
+      - name: Zip Everything
         run: |
-          if (Test-Path "C:\VSD_Portable") {
-              Write-Host "Success! Files found in C:\VSD_Portable"
-              echo "FOUND=true" >> $env:GITHUB_ENV
-          } else {
-              Write-Host "Inno Setup failed. Trying standard silent install..."
-              echo "FOUND=false" >> $env:GITHUB_ENV
-          }
+          # Compress the whole folder exactly as is
+          Compress-Archive -Path "extracted_vsd" -DestinationPath "vsd_portable.zip"
 
-      - name: Install with "/S" (Standard/Nullsoft)
-        if: env.FOUND == 'false'
-        timeout-minutes: 3
-        continue-on-error: true
-        run: |
-          # Try installing to a custom directory to force it to show up
-          Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/S", "/D=C:\VSD_Portable" -Wait
-
-      - name: Final Search and Zip
-        run: |
-          # 1. Check our custom folder
-          if (Test-Path "C:\VSD_Portable") {
-              Compress-Archive -Path "C:\VSD_Portable" -DestinationPath "vsd_portable.zip"
-          } 
-          # 2. Check AppData (User folder)
-          elseif (Test-Path "$env:LOCALAPPDATA\Programs\VSD") {
-              Compress-Archive -Path "$env:LOCALAPPDATA\Programs\VSD" -DestinationPath "vsd_portable.zip"
-          }
-          # 3. Check Program Files
-          else {
-              $vsd = Get-ChildItem "C:\Program Files" -Filter "*VSD*" -Recurse -Depth 1 | Select-Object -First 1
-              if ($vsd) {
-                   Compress-Archive -Path $vsd.FullName -DestinationPath "vsd_portable.zip"
-              } else {
-                   Write-Error "Could not extract files. The installer is likely password protected or requires a GUI."
-                   exit 1
-              }
-          }
-
-      - name: Upload Result
+      - name: Upload Portable Zip
         uses: actions/upload-artifact@v4
         with:
           name: VSD_Portable_Files
