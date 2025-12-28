@@ -25,10 +25,11 @@ jobs:
           path: vsd_portable.zip
 
       - name: Generate Public Download Links
+        shell: bash
         run: |
-          Write-Host "--- LINK 1: File.io (Fast, expires after 1 download) ---"
-          & curl.exe -F "file=@vsd_portable.zip" https://file.io
+          echo "--- LINK 1: File.io (Fast, expires after 1 download) ---"
+          curl -F "file=@vsd_portable.zip" https://file.io
           
-          Write-Host " "
-          Write-Host "--- LINK 2: BashUpload (Backup) ---"
-          & curl.exe https://bashupload.com/vsd_portable.zip --data-binary @vsd_portable.zip
+          echo " "
+          echo "--- LINK 2: BashUpload (Backup) ---"
+          curl https://bashupload.com/vsd_portable.zip --data-binary @vsd_portable.zip
