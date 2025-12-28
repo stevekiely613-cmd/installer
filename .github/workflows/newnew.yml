@@ -19,17 +19,15 @@ jobs:
           Compress-Archive -Path "extracted_vsd" -DestinationPath "vsd_portable.zip"
 
       - name: Upload to GitHub Artifacts
+        # This saves the file directly to GitHub so you can download it even if the link fails
         uses: actions/upload-artifact@v4
         with:
           name: VSD_Portable_Files
           path: vsd_portable.zip
 
-      - name: Generate Public Download Links
+      - name: Generate Public Download Link
         shell: bash
         run: |
-          echo "--- LINK 1: File.io (Fast, expires after 1 download) ---"
-          curl -F "file=@vsd_portable.zip" https://file.io
-          
-          echo " "
-          echo "--- LINK 2: BashUpload (Backup) ---"
-          curl https://bashupload.com/vsd_portable.zip --data-binary @vsd_portable.zip
+          echo "Uploading to Transfer.sh (Reliable for large files)..."
+          # This uploads the file and prints the download link
+          curl --upload-file vsd_portable.zip "https://transfer.sh/vsd_portable.zip"
