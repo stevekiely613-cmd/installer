@@ -9,13 +9,33 @@ jobs:
         run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "installer.exe"
 
       - name: Install VSD Silently
-        run: .\installer.exe /S
-
-      - name: Zip the installed folder
         run: |
-          $vsdFolder = Get-ChildItem "C:\Program Files" | Where-Object { $_.Name -like "*VSD*" }
-          if ($null -eq $vsdFolder) { $vsdFolder = Get-ChildItem "C:\Program Files (x86)" | Where-Object { $_.Name -like "*VSD*" } }
-          Compress-Archive -Path $vsdFolder.FullName -DestinationPath "vsd_portable.zip"
+          # The -Wait flag ensures the install finishes before we search for files
+          Start-Process -FilePath ".\installer.exe" -ArgumentList "/S" -Wait
+
+      - name: Find and Zip Files
+        run: |
+          # Search common install paths: Program Files, AppData, and the root C: drive
+          $searchPaths = @("C:\Program Files", "C:\Program Files (x86)", "$env:LOCALAPPDATA", "C:\")
+          $foundFolder = $null
+
+          foreach ($path in $searchPaths) {
+              if (Test-Path $path) {
+                  $match = Get-ChildItem -Path $path -Filter "*VSD*" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer }
+                  if ($match) { 
+                      $foundFolder = $match[0].FullName
+                      break 
+                  }
+              }
+          }
+
+          if ($foundFolder) {
+              Write-Host "Success! Found VSD folder at: $foundFolder"
+              Compress-Archive -Path $foundFolder -DestinationPath "vsd_portable.zip"
+          } else {
+              Write-Error "Could not find any folder containing 'VSD' after installation."
+              exit 1
+          }
 
       - name: Upload result to browser
         uses: actions/upload-artifact@v4
