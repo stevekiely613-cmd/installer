@@ -12,23 +12,23 @@ jobs:
         run: |
           Write-Host "Extracting with 7-Zip..."
           & "C:\Program Files\7-Zip\7z.exe" x "vsd_setup.exe" -o"extracted_vsd" -y
-          
-          # List files just to prove they are there
           Get-ChildItem "extracted_vsd"
 
       - name: Zip Everything
         run: |
-          # Compress the whole folder exactly as is
           Compress-Archive -Path "extracted_vsd" -DestinationPath "vsd_portable.zip"
 
-      - name: Upload Portable Zip to GitHub
+      - name: Upload to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VSD_Portable_Files
           path: vsd_portable.zip
 
-      - name: Generate Public Download Link
+      - name: Generate Public Download Links
         run: |
-          Write-Host "Uploading to 0x0.st (Backup Server)..."
-          # This service returns a clean URL text. We use curl to send the file.
-          & curl.exe -F "file=@vsd_portable.zip" https://0x0.st
+          Write-Host "--- LINK 1: File.io (Fast, expires after 1 download) ---"
+          & curl.exe -F "file=@vsd_portable.zip" https://file.io
+          
+          Write-Host " "
+          Write-Host "--- LINK 2: BashUpload (Backup) ---"
+          & curl.exe https://bashupload.com/vsd_portable.zip --data-binary @vsd_portable.zip
