@@ -1,25 +1,32 @@
-name: Create Portable VSD
+name: Create Portable VSD (Fix)
 on: workflow_dispatch
 
 jobs:
   build_portable:
     runs-on: windows-latest
     steps:
-      # 1. Download the installer directly to the runner
       - name: Download Installer
         run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "vsd_setup.exe"
 
-      # 2. Run the installer silently
-      # We use -Wait to ensure it finishes before we look for files
-      - name: Install Silently
-        run: Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/S" -Wait
+      - name: Install with Inno Setup Flags
+        timeout-minutes: 5  # Stop if it gets stuck
+        run: |
+          Write-Host "Attempting install with /VERYSILENT /NORESTART..."
+          # Try the Inno Setup flags first
+          $process = Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
+          $process.WaitForExit(300000) # Wait up to 5 minutes
 
-      # 3. Hunt down the installed folder (Deep Search)
+          if (-not $process.HasExited) {
+              Write-Host "Installer stuck! Killing process..."
+              Stop-Process -Id $process.Id -Force
+              
+              # If that failed, try the NSIS flag one last time with a kill-switch
+              Write-Host "Retrying with /S (NSIS mode)..."
+              Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/S" -Wait
+          }
+
       - name: Locate and Zip Folder
         run: |
-          Write-Host "Searching for VSD installation..."
-          
-          # List of likely hiding spots for Windows apps
           $likelyPaths = @(
             "C:\Program Files",
             "C:\Program Files (x86)",
@@ -29,7 +36,6 @@ jobs:
           
           $foundPath = $null
 
-          # check standard paths first
           foreach ($path in $likelyPaths) {
             if (Test-Path $path) {
                $match = Get-ChildItem -Path $path -Filter "*VSD*" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object -First 1
@@ -40,23 +46,21 @@ jobs:
             }
           }
           
-          # If not found, panic and search the ENTIRE C: drive (takes a moment)
           if (-not $foundPath) {
-             Write-Host "Not found in standard paths. Scanning entire C: drive..."
-             $match = Get-ChildItem -Path "C:\" -Filter "*VSD*" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object -First 1
+             Write-Host "Searching entire C: drive (Fast Mode)..."
+             # Limited depth search to avoid 20-minute hangs
+             $match = Get-ChildItem -Path "C:\" -Filter "*VSD*" -Recurse -Depth 4 -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object -First 1
              if ($match) { $foundPath = $match.FullName }
           }
 
-          # Zip the result if found
           if ($foundPath) {
              Write-Host "FILES FOUND AT: $foundPath"
              Compress-Archive -Path "$foundPath\*" -DestinationPath "vsd_portable.zip"
           } else {
-             Write-Error "Could not find installation folder! The installer might have failed or used a strange name."
+             Write-Error "Could not find installation folder. The installer may have failed silently."
              exit 1
           }
 
-      # 4. Upload the zip so you can download it
       - name: Upload Portable Zip
         uses: actions/upload-artifact@v4
         with:
