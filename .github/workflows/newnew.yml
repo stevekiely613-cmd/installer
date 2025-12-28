@@ -1,65 +1,40 @@
-name: Create Portable VSD (Fix)
+name: Extract VSD (Ripper Mode)
 on: workflow_dispatch
 
 jobs:
-  build_portable:
+  rip_files:
     runs-on: windows-latest
     steps:
       - name: Download Installer
         run: Invoke-WebRequest -Uri "https://cdn.vsdinside.com/shopify_VSD/VSD-Craft-Installer_Windows.exe" -OutFile "vsd_setup.exe"
 
-      - name: Install with Inno Setup Flags
-        timeout-minutes: 5  # Stop if it gets stuck
+      - name: Rip Files with 7-Zip
         run: |
-          Write-Host "Attempting install with /VERYSILENT /NORESTART..."
-          # Try the Inno Setup flags first
-          $process = Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -PassThru
-          $process.WaitForExit(300000) # Wait up to 5 minutes
-
-          if (-not $process.HasExited) {
-              Write-Host "Installer stuck! Killing process..."
-              Stop-Process -Id $process.Id -Force
-              
-              # If that failed, try the NSIS flag one last time with a kill-switch
-              Write-Host "Retrying with /S (NSIS mode)..."
-              Start-Process -FilePath ".\vsd_setup.exe" -ArgumentList "/S" -Wait
-          }
-
-      - name: Locate and Zip Folder
-        run: |
-          $likelyPaths = @(
-            "C:\Program Files",
-            "C:\Program Files (x86)",
-            "$env:LOCALAPPDATA",
-            "$env:APPDATA"
-          )
+          # 7-Zip is pre-installed on GitHub Runners. We use it to open the exe as an archive.
+          # -y = yes to all prompts
+          # -o = output directory
           
-          $foundPath = $null
-
-          foreach ($path in $likelyPaths) {
-            if (Test-Path $path) {
-               $match = Get-ChildItem -Path $path -Filter "*VSD*" -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-               if ($match) {
-                 $foundPath = $match.FullName
-                 break
-               }
-            }
-          }
+          Write-Host "Attempting extraction with 7-Zip..."
+          & "C:\Program Files\7-Zip\7z.exe" x "vsd_setup.exe" -o"extracted_vsd" -y
           
-          if (-not $foundPath) {
-             Write-Host "Searching entire C: drive (Fast Mode)..."
-             # Limited depth search to avoid 20-minute hangs
-             $match = Get-ChildItem -Path "C:\" -Filter "*VSD*" -Recurse -Depth 4 -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-             if ($match) { $foundPath = $match.FullName }
-          }
-
-          if ($foundPath) {
-             Write-Host "FILES FOUND AT: $foundPath"
-             Compress-Archive -Path "$foundPath\*" -DestinationPath "vsd_portable.zip"
+          if (Test-Path "extracted_vsd") {
+              Write-Host "Extraction Successful!"
+              Get-ChildItem "extracted_vsd"
           } else {
-             Write-Error "Could not find installation folder. The installer may have failed silently."
-             exit 1
+              Write-Error "7-Zip failed to open the file."
+              exit 1
           }
+
+      - name: Clean up specific folders
+        # Some installers extract weird internal files. We rename the main folder to make it clear.
+        run: |
+          if (Test-Path "extracted_vsd\$_OUTDIR") {
+              Write-Host "Found standard output directory. Renaming..."
+              Move-Item "extracted_vsd\$_OUTDIR" "extracted_vsd\VSD_Program_Files"
+          }
+
+      - name: Zip the Result
+        run: Compress-Archive -Path "extracted_vsd\*" -DestinationPath "vsd_portable.zip"
 
       - name: Upload Portable Zip
         uses: actions/upload-artifact@v4
